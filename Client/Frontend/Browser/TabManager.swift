@@ -620,7 +620,7 @@ class SavedTab: NSObject, NSCoding {
 
 extension TabManager {
 
-    static fileprivate func tabsStateArchivePath() -> String {
+    static func tabsStateArchivePath() -> String {
         let documentsPath = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
         return URL(fileURLWithPath: documentsPath).appendingPathComponent("tabsState.archive").path
     }
@@ -635,12 +635,14 @@ extension TabManager {
     }
 
     static func tabsToRestore() -> [SavedTab]? {
-        if let tabData = tabArchiveData() {
-            let unarchiver = NSKeyedUnarchiver(forReadingWith: tabData)
-            return unarchiver.decodeObject(forKey: "tabs") as? [SavedTab]
-        } else {
+        guard let tabData = tabArchiveData() else {
             return nil
         }
+
+        let unarchiver = NSKeyedUnarchiver(forReadingWith: tabData)
+        unarchiver.decodingFailurePolicy = .setErrorAndReturn
+        
+        return unarchiver.decodeObject(forKey: "tabs") as? [SavedTab]
     }
 
     fileprivate func preserveTabsInternal() {
@@ -670,16 +672,12 @@ extension TabManager {
         let archiver = NSKeyedArchiver(forWritingWith: tabStateData)
         archiver.encode(savedTabs, forKey: "tabs")
         archiver.finishEncoding()
-        tabStateData.write(toFile: path, atomically: true)
+        let status = tabStateData.write(toFile: path, atomically: true)
+        print(status)
     }
 
     func preserveTabs() {
-        // This is wrapped in an Objective-C @try/@catch handler because NSKeyedArchiver may throw exceptions which Swift cannot handle
-        _ = Try(withTry: { () -> Void in
-            self.preserveTabsInternal()
-            }) { (exception) -> Void in
-            print("Failed to preserve tabs: \(exception ??? "nil")")
-        }
+        self.preserveTabsInternal()
     }
 
     fileprivate func restoreTabsInternal() {
@@ -749,17 +747,8 @@ extension TabManager {
 
     func restoreTabs() {
         isRestoring = true
-
-        if count == 0 && !AppConstants.IsRunningTest && !DebugSettingsBundleOptions.skipSessionRestore {
-            // This is wrapped in an Objective-C @try/@catch handler because NSKeyedUnarchiver may throw exceptions which Swift cannot handle
-            let _ = Try(
-                withTry: { () -> Void in
-                    self.restoreTabsInternal()
-                },
-                catch: { exception in
-                    print("Failed to restore tabs: \(exception ??? "nil")")
-                }
-            )
+        if count == 0 && !DebugSettingsBundleOptions.skipSessionRestore {
+            self.restoreTabsInternal()
         }
         isRestoring = false
 
